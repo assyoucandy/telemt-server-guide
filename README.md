@@ -6,6 +6,8 @@
 
 👉 **https://assyoucandy.github.io/telemt-server-guide/**
 
+🛠️ **Фикс зависаний на iOS (keepalive):** **https://assyoucandy.github.io/telemt-server-guide/telemt-keepalive-guide.html**
+
 ## Что внутри
 
 Пошаговая инструкция (10 разделов) с копируемыми блоками команд:
@@ -28,6 +30,27 @@
 | Настоящий TLS-фронтинг telemt | детекция по TLS-хендшейку |
 | `client_mss = "tspu"` (MSS=92) | анализ размера TCP-сегментов |
 | UFW rate-limit 1 SYN/сек на IP (per-port) | активное зондирование прокси |
+
+## 🛠️ Фикс зависаний на iOS
+
+Отдельный мини-гайд: **[telemt-keepalive-guide.html](https://assyoucandy.github.io/telemt-server-guide/telemt-keepalive-guide.html)**
+
+**Симптом:** на iOS Telegram перестаёт коннектиться к прокси после сворачивания приложения — помогает только переключение на другой прокси.
+
+**Причина:** iOS усыпляет приложение в фоне и рвёт сокет не чисто. Сервер продолжает держать мёртвый `established`-коннект, и при возврате клиент залипает на нём.
+
+**Решение:** ускоренный TCP keepalive через sysctl. telemt ставит `SO_KEEPALIVE`, поэтому ядро само быстро пробивает тихий коннект и рвёт его RST-ом за ~105с — клиент сразу делает чистый реконнект. Настройка глобальная, накрывает все порты/инстансы сразу.
+
+```bash
+cat > /etc/sysctl.d/99-tg-keepalive.conf << 'EOF'
+net.ipv4.tcp_keepalive_time = 60
+net.ipv4.tcp_keepalive_intvl = 15
+net.ipv4.tcp_keepalive_probes = 3
+EOF
+sysctl --system
+```
+
+> Лечит залипание клиента на мёртвом сокете. Не влияет на DPI-детект выше по пути — это разные слои.
 
 ## Зачем это нужно
 
