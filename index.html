@@ -364,8 +364,12 @@ ufw status</pre>
       <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">bash — подготовка</span><button class="copy">COPY</button></div>
 <pre>modprobe xt_recent
 echo xt_recent > /etc/modules-load.d/xt_recent.conf
-cp /etc/ufw/before.rules /etc/ufw/before.rules.bak.$(date +%s)</pre>
+cp /etc/ufw/before.rules /etc/ufw/before.rules.bak.$(date +%s)
+
+<span class="cm"># ПРОВЕРЬ что модуль реально загрузился — должна быть строка:</span>
+lsmod | grep xt_recent</pre>
     </div>
+    <div class="note danger"><b>Критично: модуль xt_recent.</b> Если <code class="inline">lsmod | grep xt_recent</code> ничего не вывел — модуль не загружен, и UFW при <code class="inline">reload</code> <b>молча выбросит</b> правила с <code class="inline">-m recent</code> (не подтянутся, grep покажет пустоту). Сначала добейся чтобы <code class="inline">modprobe xt_recent</code> прошёл без ошибок и <code class="inline">lsmod</code> показал модуль, и только потом делай <code class="inline">ufw reload</code>.</div>
 
     <p class="step-note">Вставка правил в <code class="inline">/etc/ufw/before.rules</code> (в цепочку <code class="inline">ufw-before-input</code>, после established). <strong>Каждому порту — свой список</strong>, иначе переключение между прокси в Telegram будет рвать соединение.</p>
     <span class="file-tag">правит /etc/ufw/before.rules</span>
@@ -425,6 +429,27 @@ ls -la /opt/telemt/tlsfront/
 journalctl -u telemt1 -n 20 --no-pager | grep -iE <span class="str">"error|panic|bind"</span></pre>
     </div>
     <div class="note ok"><b>Признаки успеха:</b> три <code class="inline">active</code>, порты держит <code class="inline">telemt</code>, в <code class="inline">/opt/telemt/tlsfront/</code> лежат <code class="inline">www.apple.com.json</code> и др. размером в десятки КБ. Предупреждение <code class="inline">Skipping IPv6 listener</code> — норма (IPv6 отключён).</div>
+
+    <p class="step-note"><strong>Если правил rate-limit не видно</strong> (grep по recent пустой) — самая частая причина в том, что не загружен модуль <code class="inline">xt_recent</code>, и UFW тихо выбросил правила. Диагностика:</p>
+    <div class="code">
+      <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">bash — если правил нет</span><button class="copy">COPY</button></div>
+<pre><span class="cm"># 1. модуль загружен? (если пусто — вот она, причина)</span>
+lsmod | grep xt_recent
+
+<span class="cm"># 2. правила реально в файле?</span>
+grep -n <span class="str">"mtp\|recent"</span> /etc/ufw/before.rules
+
+<span class="cm"># 3. на nft-системах (Ubuntu 22.04+) iptables -L может не показать —</span>
+<span class="cm">#    проверь через nft напрямую:</span>
+nft list chain inet filter ufw-before-input 2>/dev/null | grep -i recent
+
+<span class="cm"># ЛЕЧЕНИЕ если модуль не загружен:</span>
+modprobe xt_recent
+echo xt_recent > /etc/modules-load.d/xt_recent.conf
+ufw reload
+iptables -L ufw-before-input -n | grep recent   <span class="cm"># теперь должно появиться</span></pre>
+    </div>
+    <div class="note"><b>Две частые причины «тишины» после grep:</b> (1) модуль <code class="inline">xt_recent</code> не был загружен на момент <code class="inline">ufw reload</code> — UFW молча отбросил правила; лечится <code class="inline">modprobe</code> + повторный reload. (2) система на nftables — правило <b>работает</b>, просто <code class="inline">iptables -L</code> его не показывает в привычном виде, смотри через <code class="inline">nft list chain</code>.</div>
   </section>
 
   <!-- 9 -->
