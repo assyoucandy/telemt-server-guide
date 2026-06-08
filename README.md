@@ -6,7 +6,7 @@
 
 👉 **https://assyoucandy.github.io/telemt-server-guide/**
 
-🛠️ **Фикс зависаний на iOS (keepalive):** **[telemt-keepalive-guide.html](telemt-keepalive-guide.html)**
+🛠️ **Фикс зависаний на iOS (keepalive):** **https://assyoucandy.github.io/telemt-server-guide/telemt-keepalive-guide.html**
 
 ## Что внутри
 
