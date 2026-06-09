@@ -2,9 +2,10 @@
 
 Гайд по установке **telemt** (Rust MTProxy для Telegram) с нуля на Ubuntu, с настройкой нескольких инстансов, systemd-сервисов и защиты от DPI на уровне фаервола.
 
-## 📖 Открыть гайд
+## 📖 Открыть гайд по разворачиванию telemt с нуля
 
 👉 **https://assyoucandy.github.io/telemt-server-guide/**
+
 
 ## 📖 Фикс зависаний на iOS (keepalive)
 
