@@ -163,8 +163,9 @@
       <li><a href="#s2">Проверка keepalive</a></li>
       <li><a href="#s3">Применяем sysctl</a></li>
       <li><a href="#s4">Проверка отсчёта</a></li>
-      <li><a href="#s5">conntrack (опц.)</a></li>
+      <li><a href="#s5">Тайминги telemt</a></li>
       <li><a href="#s6">Чего это не чинит</a></li>
+      <li><a href="#s7">Как откатить</a></li>
     </ol>
   </nav>
 
@@ -184,13 +185,62 @@
   <!-- 2 -->
   <section id="s2">
     <div class="step-head"><span class="num">2</span><h2>Убедиться, что keepalive есть</h2></div>
-    <p class="step-note">Одна команда подтверждает, что метод применим. Подставь любой реальный порт инстанса.</p>
+    <p class="step-note">Проверки ниже на Python — он есть в любой Ubuntu из коробки. На всякий случай убедись:</p>
     <div class="code">
       <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">bash</span><button class="copy">COPY</button></div>
-<pre>ss -tinoH state established <span class="str">"sport = :8443"</span> \
-  | grep -o <span class="str">'timer:([a-z]*'</span> | sort | uniq -c</pre>
+<pre>python3 --version <span class="cm"># если не найден: apt install -y python3</span></pre>
     </div>
-    <div class="note ok"><b>Что должно быть:</b> строка <code class="inline">timer:(keepalive</code> с ненулевым счётчиком — значит keepalive армирован, метод подходит. Строки <code class="inline">timer:(on</code> — это retransmit-таймер активных передач, норма, к делу не относятся.</div>
+    <p class="step-note">Скрипт сам достаёт порты инстансов из <code class="inline">/etc/telemt/*.toml</code>, парсит <code class="inline">ss</code> (он выдаёт по две строки на соединение — питон их корректно склеивает) и считает таймеры на клиентских коннектах. Ничего подставлять руками не нужно.</p>
+    <div class="code">
+      <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">python3</span><button class="copy">COPY</button></div>
+<pre>python3 &lt;&lt; <span class="str">'PYEOF'</span>
+import subprocess, re, glob
+from collections import Counter
+
+<span class="cm"># порты инстансов из конфигов</span>
+ports = set()
+for f in glob.glob(<span class="str">"/etc/telemt/*.toml"</span>):
+    for line in open(f):
+        m = re.match(r<span class="str">'\s*port\s*=\s*(\d+)'</span>, line)
+        if m: ports.add(m.group(1))
+
+<span class="cm"># ss: established с таймерами; склеиваем двустрочные записи</span>
+out = subprocess.run([<span class="str">"ss"</span>,<span class="str">"-tinoH"</span>,<span class="str">"state"</span>,<span class="str">"established"</span>],
+                     capture_output=True, text=True).stdout
+records, buf = [], <span class="str">""</span>
+for ln in out.split(<span class="str">"\n"</span>):
+    if not ln.strip(): continue
+    if ln[0].isspace(): buf += <span class="str">" "</span> + ln.strip()
+    else:
+        if buf: records.append(buf)
+        buf = ln.strip()
+if buf: records.append(buf)
+
+<span class="cm"># считаем таймеры на соединениях с локальным портом из наших</span>
+timers, total = Counter(), 0
+for r in records:
+    f = r.split()
+    local = f[2] if len(f) > 2 else <span class="str">""</span>
+    if not any(local.endswith(<span class="str">":"</span>+p) for p in ports): continue
+    total += 1
+    m = re.search(r<span class="str">'timer:\((\w+)'</span>, r)
+    timers[m.group(1) if m else <span class="str">"—"</span>] += 1
+
+<span class="cm"># красивый вывод</span>
+W = 44
+print(<span class="str">"╭" + "─"*W + "╮"</span>)
+print(<span class="str">"│ "</span> + <span class="str">"KEEPALIVE CHECK"</span>.ljust(W-1) + <span class="str">"│"</span>)
+print(<span class="str">"├" + "─"*W + "┤"</span>)
+print(<span class="str">"│ "</span> + f<span class="str">"Порты telemt:  {', '.join(sorted(ports)) or '—'}"</span>.ljust(W-1) + <span class="str">"│"</span>)
+print(<span class="str">"│ "</span> + f<span class="str">"Соединений:    {total}"</span>.ljust(W-1) + <span class="str">"│"</span>)
+print(<span class="str">"├" + "─"*W + "┤"</span>)
+for name, cnt in timers.most_common():
+    bar = <span class="str">"█"</span> * min(cnt, 24)
+    print(<span class="str">"│ "</span> + f<span class="str">"{name:<10} {cnt:>4}  {bar}"</span>.ljust(W-1) + <span class="str">"│"</span>)
+print(<span class="str">"╰" + "─"*W + "╯"</span>)
+PYEOF</pre>
+    </div>
+    <div class="note ok"><b>Что должно быть:</b> большинство соединений с таймером <code class="inline">keepalive</code> — значит keepalive армирован, метод подходит. Несколько <code class="inline">on</code> — это retransmit-таймер активных передач, норма, к делу не относятся. Если соединений <code class="inline">0</code> — просто сейчас никто не подключён, проверь когда будет трафик.</div>
   </section>
 
   <!-- 3 -->
@@ -223,12 +273,58 @@ sysctl --system</pre>
   <!-- 4 -->
   <section id="s4">
     <div class="step-head"><span class="num">4</span><h2>Главная проверка — отсчёт таймера</h2></div>
-    <p class="step-note">Это источник правды: применился ли sysctl к живым сокетам. Смотрим реальный обратный отсчёт keepalive-таймера на соединениях.</p>
+    <p class="step-note">Это источник правды: применился ли sysctl к живым сокетам. Тот же подход, но вытаскиваем сами значения обратного отсчёта keepalive-таймера — видно, сползают ли они к заданным 60с.</p>
     <div class="code">
-      <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">bash</span><button class="copy">COPY</button></div>
-<pre>ss -tinoH state established <span class="str">"sport = :8443"</span> \
-  | grep -oE <span class="str">'timer:\(keepalive,[0-9]+(min|sec)'</span> \
-  | sort | uniq -c | sort -rn | head</pre>
+      <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">python3</span><button class="copy">COPY</button></div>
+<pre>python3 &lt;&lt; <span class="str">'PYEOF'</span>
+import subprocess, re, glob
+from collections import Counter
+
+ports = set()
+for f in glob.glob(<span class="str">"/etc/telemt/*.toml"</span>):
+    for line in open(f):
+        m = re.match(r<span class="str">'\s*port\s*=\s*(\d+)'</span>, line)
+        if m: ports.add(m.group(1))
+
+out = subprocess.run([<span class="str">"ss"</span>,<span class="str">"-tinoH"</span>,<span class="str">"state"</span>,<span class="str">"established"</span>],
+                     capture_output=True, text=True).stdout
+records, buf = [], <span class="str">""</span>
+for ln in out.split(<span class="str">"\n"</span>):
+    if not ln.strip(): continue
+    if ln[0].isspace(): buf += <span class="str">" "</span> + ln.strip()
+    else:
+        if buf: records.append(buf)
+        buf = ln.strip()
+if buf: records.append(buf)
+
+<span class="cm"># собираем значения обратного отсчёта keepalive-таймера</span>
+countdown = Counter()
+for r in records:
+    f = r.split()
+    local = f[2] if len(f) > 2 else <span class="str">""</span>
+    if not any(local.endswith(<span class="str">":"</span>+p) for p in ports): continue
+    m = re.search(r<span class="str">'timer:\(keepalive,([^,)]+)'</span>, r)
+    if m: countdown[m.group(1)] += 1
+
+<span class="cm"># сортируем по реальной длительности (ms &lt; sec &lt; min)</span>
+def secs(v):
+    n = float(re.findall(r<span class="str">'[0-9.]+'</span>, v)[0])
+    if <span class="str">'ms'</span> in v: return n/1000
+    if <span class="str">'min'</span> in v: return n*60
+    return n
+
+W = 44
+print(<span class="str">"╭" + "─"*W + "╮"</span>)
+print(<span class="str">"│ "</span> + <span class="str">"KEEPALIVE COUNTDOWN"</span>.ljust(W-1) + <span class="str">"│"</span>)
+print(<span class="str">"├" + "─"*W + "┤"</span>)
+if not countdown:
+    print(<span class="str">"│ "</span> + <span class="str">"нет активных соединений сейчас"</span>.ljust(W-1) + <span class="str">"│"</span>)
+else:
+    for val, cnt in sorted(countdown.items(), key=lambda x: secs(x[0])):
+        bar = <span class="str">"█"</span> * min(cnt, 24)
+        print(<span class="str">"│ "</span> + f<span class="str">"{val:<10} {cnt:>3}  {bar}"</span>.ljust(W-1) + <span class="str">"│"</span>)
+print(<span class="str">"╰" + "─"*W + "╯"</span>)
+PYEOF</pre>
     </div>
     <ul class="clean">
       <li><strong>Значения ≤60sec</strong> (или сползают туда за пару минут) → sysctl подхватился. <strong>Готово</strong>, ничего больше делать не нужно.</li>
@@ -239,17 +335,26 @@ sysctl --system</pre>
 
   <!-- 5 -->
   <section id="s5">
-    <div class="step-head"><span class="num">5</span><h2>conntrack — грубый предохранитель (опц.)</h2></div>
-    <p class="step-note">Дополнительно можно урезать established-таймаут conntrack. keepalive-пробы освежают conntrack-записи живых коннектов, поэтому пострадают только мёртвые.</p>
-    <span class="file-tag">дописывает в 99-tg-keepalive.conf</span>
+    <div class="step-head"><span class="num">5</span><h2>Тайминги в самом telemt — не трогать</h2></div>
+    <p class="step-note">У telemt есть своя секция таймаутов <code class="inline">[timeouts]</code> (<code class="inline">client_handshake</code>, <code class="inline">client_keepalive</code>, <code class="inline">tg_connect</code>, <code class="inline">client_ack</code>). Возникает соблазн «ускорить» отлов мёртвых соединений ещё и через неё. <strong>Не надо.</strong> Для этой задачи правильный слой — ядро (шаги 3–4), а не конфиг telemt.</p>
+
+    <div class="note ok"><b>Рекомендация: секции <code class="inline">[timeouts]</code> в конфиге быть не должно.</b> Если её нет — telemt берёт разумные дефолты (<code class="inline">client_handshake = 15</code>, <code class="inline">client_keepalive = 60</code>, <code class="inline">tg_connect = 10</code>, <code class="inline">client_ack = 300</code>). Этого достаточно. Если секция есть и ты её правил — лучше удалить целиком и вернуться к дефолтам.</div>
+
+    <p class="step-note">Почему именно ядро, а не тайминги telemt:</p>
+    <ul class="clean">
+      <li><strong>Это разные задачи.</strong> Ядерный <code class="inline">tcp_keepalive</code> детектит <em>физически мёртвый</em> сокет (клиент пропал из сети, провод оборвался) — ниже уровнем и надёжнее. Тайминги telemt — про <em>логику сессии</em> (успеть хендшейк, ACK), это не про обрыв канала.</li>
+      <li><strong>Агрессивные тайминги вредят.</strong> Например <code class="inline">client_handshake = 10</code> рвёт медленных мобильных/iOS-клиентов, которые не успевают рукопожатие за 10с. <code class="inline">client_keepalive = 15</code> на рваном канале даёт ложные обрывы живых сессий. Дефолты терпимее.</li>
+      <li><strong>Меньше переменных — чище поведение.</strong> Один слой (ядро) делает одну понятную вещь. Дублировать ту же логику в telemt агрессивными значениями — только плодить странные обрывы, которые потом сложно диагностировать.</li>
+    </ul>
+
+    <span class="file-tag">проверить, есть ли секция в конфиге</span>
     <div class="code">
       <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">bash</span><button class="copy">COPY</button></div>
-<pre><span class="cm"># по умолчанию ~432000с (5 суток). 3600 = 1 час.</span>
-echo <span class="str">'net.netfilter.nf_conntrack_tcp_timeout_established = 3600'</span> \
-  &gt;&gt; /etc/sysctl.d/99-tg-keepalive.conf
-sysctl --system</pre>
+<pre><span class="cm"># если что-то вывелось — секция есть, лучше убрать её и перезапустить telemt</span>
+grep -n <span class="str">'\[timeouts\]'</span> /etc/telemt/*.toml</pre>
     </div>
-    <div class="note warn"><b>Необязательно.</b> Базовый keepalive из шага 3 уже решает задачу. Этот пункт — лишь дополнительная страховка от подвисших conntrack-записей; включай по желанию.</div>
+
+    <div class="note warn"><b>Про <code class="inline">use_middle_proxy = false</code>:</b> при прямой маршрутизации (direct relay) вся группа ME-таймаутов (<code class="inline">me_keepalive_*</code>, <code class="inline">me_reconnect_*</code>) вообще не применяется. Работают только клиентские тайминги и ядерный keepalive — ещё одна причина держать всё на ядре, а конфиг telemt не усложнять.</div>
   </section>
 
   <!-- 6 -->
@@ -262,6 +367,33 @@ sysctl --system</pre>
       <li>При детекте на уровне IP ротация нескольких инстансов на одном адресе перестанет помогать.</li>
     </ul>
     <div class="note"><b>Итог:</b> keepalive убирает залипание мобильного клиента после фона — это его прямая задача, и он с ней справляется. Остальные ограничения относятся к слоям, которые на самом сервере не лечатся.</div>
+  </section>
+
+  <!-- 7 -->
+  <section id="s7">
+    <div class="step-head"><span class="num">7</span><h2>Как откатить всё назад</h2></div>
+    <p class="step-note">Если нужно вернуть систему в исходное состояние — удаляем файл sysctl и сбрасываем значения ядра к дефолтам. Одной командой:</p>
+    <div class="code">
+      <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">bash</span><button class="copy">COPY</button></div>
+<pre><span class="cm"># удаляем наш конфиг</span>
+rm -f /etc/sysctl.d/99-tg-keepalive.conf
+
+<span class="cm"># возвращаем дефолтные значения ядра Linux</span>
+sysctl -w net.ipv4.tcp_keepalive_time=7200
+sysctl -w net.ipv4.tcp_keepalive_intvl=75
+sysctl -w net.ipv4.tcp_keepalive_probes=9
+
+<span class="cm"># перечитываем оставшиеся sysctl-файлы</span>
+sysctl --system</pre>
+    </div>
+    <p class="step-note">Проверяем, что вернулись дефолты (<code class="inline">7200 / 75 / 9</code>):</p>
+    <div class="code">
+      <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">bash</span><button class="copy">COPY</button></div>
+<pre>sysctl net.ipv4.tcp_keepalive_time \
+       net.ipv4.tcp_keepalive_intvl \
+       net.ipv4.tcp_keepalive_probes</pre>
+    </div>
+    <div class="note"><b>Без перезагрузки:</b> <code class="inline">sysctl -w</code> применяет дефолты к ядру сразу, новые соединения подхватят их немедленно. Уже открытые сокеты дойдут до старого таймаута один раз, дальше — на дефолтных. Полностью чисто будет после <code class="inline">reboot</code>, но он не обязателен.</div>
   </section>
 
   <footer>
