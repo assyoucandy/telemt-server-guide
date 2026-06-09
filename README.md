@@ -48,6 +48,7 @@
 > ⚠️ Секреты в гайде — заглушки (`СЕКРЕТ_1` и т.д.), генерируй свои через `openssl rand -hex 16`.
 > Перед `ufw enable` обязательно разреши SSH-порт, иначе отрежешь себе доступ.
 
+
 ## 🛠️ Фикс зависаний на iOS
 
 Отдельный мини-гайд: **[telemt-keepalive-guide.html](https://assyoucandy.github.io/telemt-server-guide/telemt-keepalive-guide.html)**
