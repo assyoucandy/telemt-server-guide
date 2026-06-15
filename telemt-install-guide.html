@@ -166,9 +166,10 @@
       <li><a href="#s5">Конфиги инстансов</a></li>
       <li><a href="#s6">systemd-сервисы</a></li>
       <li><a href="#s7">UFW: порты + защита</a></li>
-      <li><a href="#s8">Запуск и проверка</a></li>
-      <li><a href="#s9">Ссылки для клиентов</a></li>
-      <li><a href="#s10">Управление и обновление</a></li>
+      <li><a href="#s8">Сетевой тюнинг (BBR)</a></li>
+      <li><a href="#s9">Запуск и проверка</a></li>
+      <li><a href="#s10">Ссылки для клиентов</a></li>
+      <li><a href="#s11">Управление и обновление</a></li>
     </ol>
   </nav>
 
@@ -437,9 +438,52 @@ ufw reload</pre>
     <div class="note warn"><b>Тонкость per-port.</b> Если сделать один общий список на все порты — Telegram при переключении между прокси шлёт SYN на них одновременно с одного IP в одну секунду, лимит рубит лишние, и прокси «отваливается». Раздельные списки (<code class="inline">mtp443</code>, <code class="inline">mtp5223</code>...) это решают.</div>
   </section>
 
-  <!-- 8 -->
+    <!-- 8 -->
   <section id="s8">
-    <div class="step-head"><span class="num">8</span><h2>Запуск и проверка</h2></div>
+    <div class="step-head"><span class="num">8</span><h2>Сетевой тюнинг ядра (keepalive + BBR)</h2></div>
+    <p class="step-note">Две настройки уровня ядра, общие для всех инстансов сразу. Лечат залипание мобильных клиентов после фона и улучшают скорость на плохих каналах.</p>
+
+    <div class="note"><b>iOS / Android в фоне.</b> Когда телефон усыпляет Telegram, сокет рвётся «грязно» — сервер продолжает держать мёртвый <code class="inline">established</code>-коннект, и при возврате клиент залипает на нём (помогает только переключение прокси). Ускоренный TCP keepalive заставляет ядро быстро пробить тихий коннект и оборвать его — клиент делает чистый реконнект.</div>
+
+    <p class="step-note">Создаём sysctl-файл с keepalive и congestion control BBR:</p>
+    <div class="code">
+      <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">bash</span><button class="copy">COPY</button></div>
+<pre>cat > /etc/sysctl.d/99-telemt-net.conf <span class="str">&lt;&lt;'EOF'</span>
+<span class="cm"># --- TCP keepalive: быстро реапим мёртвые коннекты (фикс iOS-фона) ---</span>
+net.ipv4.tcp_keepalive_time = 60
+net.ipv4.tcp_keepalive_intvl = 15
+net.ipv4.tcp_keepalive_probes = 3
+
+<span class="cm"># --- BBR + fq: лучше латентность и throughput на плохих сетях ---</span>
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+EOF
+
+<span class="cm"># применяем</span>
+sysctl --system</pre>
+    </div>
+
+    <p class="step-note">Проверяем, что значения встали и BBR активен:</p>
+    <div class="code">
+      <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">bash — проверка</span><button class="copy">COPY</button></div>
+<pre><span class="cm"># keepalive (ждём 60 / 15 / 3)</span>
+sysctl net.ipv4.tcp_keepalive_time net.ipv4.tcp_keepalive_intvl net.ipv4.tcp_keepalive_probes
+
+<span class="cm"># congestion control (ждём bbr)</span>
+sysctl net.ipv4.tcp_congestion_control
+
+<span class="cm"># bbr реально доступен ядру?</span>
+sysctl net.ipv4.tcp_available_congestion_control | grep -o bbr</pre>
+    </div>
+
+    <div class="note ok"><b>Признак успеха:</b> keepalive показывает <code class="inline">60 / 15 / 3</code>, congestion control — <code class="inline">bbr</code>. Дохлый коннект теперь рвётся за ~105с (60 + 15×3), клиент переподключается сам.</div>
+
+    <div class="note"><b>telemt ставит <code class="inline">SO_KEEPALIVE</code> на свои сокеты сам</b>, поэтому глобальный sysctl сразу накрывает все порты и инстансы — отдельной правки конфигов telemt не требуется. Если ядро без BBR (очень старое) — строку congestion можно убрать, на keepalive это не влияет.</div>
+  </section>
+
+  <!-- 8 -->
+  <section id="s9">
+    <div class="step-head"><span class="num">9</span><h2>Запуск и проверка</h2></div>
     <p class="step-note">Включаем автозапуск, стартуем все инстансы:</p>
     <div class="code">
       <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">bash</span><button class="copy">COPY</button></div>
@@ -488,8 +532,8 @@ iptables -L ufw-before-input -n | grep recent   <span class="cm"># теперь 
   </section>
 
   <!-- 9 -->
-  <section id="s9">
-    <div class="step-head"><span class="num">9</span><h2>Ссылки для клиентов</h2></div>
+  <section id="s10">
+    <div class="step-head"><span class="num">10</span><h2>Ссылки для клиентов</h2></div>
     <p class="step-note">Ссылки telemt собирает сам — получаем их из API каждого инстанса. Берём только IPv4-вариант (без <code class="inline">server=::</code>).</p>
     <div class="code">
       <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">bash</span><button class="copy">COPY</button></div>
@@ -502,8 +546,8 @@ done</pre>
   </section>
 
   <!-- 10 -->
-  <section id="s10">
-    <div class="step-head"><span class="num">10</span><h2>Управление и обновление</h2></div>
+  <section id="s11">
+    <div class="step-head"><span class="num">11</span><h2>Управление и обновление</h2></div>
     <p class="step-note">Полезные команды на каждый день:</p>
     <div class="code">
       <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">bash — статистика</span><button class="copy">COPY</button></div>
@@ -532,7 +576,7 @@ journalctl -u telemt1 -f             <span class="cm"># логи в реальн
   </section>
 
   <footer>
-    <p>telemt install guide · Ubuntu · 3 инстанса + UFW rate-limit</p>
+    <p>telemt install guide · Ubuntu · 3 инстанса + UFW rate-limit + BBR/keepalive</p>
     <p style="margin-top:8px">секреты генерируй свои · SSH разреши до ufw enable · бэкапь before.rules<span class="blink">_</span></p>
   </footer>
 
