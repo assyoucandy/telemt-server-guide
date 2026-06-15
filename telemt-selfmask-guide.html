@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>telemt self-mask — свой домен + nginx-фронт</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap');
+
+  :root{
+    --bg:#080c0a;
+    --panel:#0e150f;
+    --border:#1c2a1e;
+    --border2:#28392a;
+    --green:#43e08a;
+    --green-dim:#2c9d63;
+    --green-glow:#43e08a2e;
+    --text:#cad6cc;
+    --text-dim:#788a7c;
+    --amber:#e3a948;
+    --red:#e86464;
+    --cyan:#52d4c4;
+    --violet:#9d8cf0;
+    --mono:'JetBrains Mono',monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--bg);
+    background-image:
+      radial-gradient(circle at 12% 8%, #11261733 0%, transparent 42%),
+      radial-gradient(circle at 88% 92%, #0e1f1c44 0%, transparent 46%),
+      repeating-linear-gradient(0deg, transparent, transparent 2px, #ffffff03 2px, #ffffff03 3px);
+    color:var(--text);
+    font-family:var(--mono);
+    font-size:15px;
+    line-height:1.7;
+    padding:0 0 80px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:900px;margin:0 auto;padding:0 24px}
+
+  /* ===== Header ===== */
+  header{
+    border-bottom:1px solid var(--border);
+    padding:54px 0 40px;
+    position:relative;
+    overflow:hidden;
+  }
+  header::before{
+    content:"";position:absolute;inset:0;
+    background:repeating-linear-gradient(90deg, transparent, transparent 64px, #43e08a07 64px, #43e08a07 65px);
+    pointer-events:none;
+  }
+  .term-line{
+    font-size:12px;color:var(--green-dim);margin-bottom:20px;letter-spacing:1px;
+  }
+  .term-line .p{color:var(--text-dim)}
+  h1{
+    font-size:clamp(30px,7vw,54px);font-weight:800;letter-spacing:-1.5px;line-height:1.05;color:#edf4ee;margin-bottom:18px;
+  }
+  h1 b{color:var(--green);text-shadow:0 0 24px var(--green-glow)}
+  .sub{color:var(--text-dim);font-size:15px;max-width:640px}
+  .badges{margin-top:26px;display:flex;gap:10px;flex-wrap:wrap}
+  .badge{
+    font-size:11px;letter-spacing:1px;color:var(--green-dim);
+    border:1px solid var(--border2);padding:5px 12px;border-radius:3px;
+    background:#0c120d;
+  }
+  .badge b{color:var(--green)}
+
+  /* ===== TOC ===== */
+  nav.toc{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:6px;
+    padding:20px 24px;
+    margin:36px 0;
+  }
+  nav.toc h4{font-size:11px;letter-spacing:2px;color:var(--text-dim);text-transform:uppercase;margin-bottom:14px}
+  nav.toc ol{list-style:none;counter-reset:t;display:grid;grid-template-columns:1fr 1fr;gap:6px 24px}
+  nav.toc li{counter-increment:t;font-size:13.5px}
+  nav.toc a{color:var(--text);text-decoration:none;display:flex;gap:10px;padding:3px 0;transition:color .15s}
+  nav.toc a::before{content:counter(t,decimal-leading-zero);color:var(--green-dim);font-weight:700}
+  nav.toc a:hover{color:var(--green)}
+  @media(max-width:600px){nav.toc ol{grid-template-columns:1fr}}
+
+  /* ===== Sections ===== */
+  section{margin:52px 0;scroll-margin-top:20px}
+  .step-head{display:flex;align-items:center;gap:16px;margin-bottom:6px;padding-bottom:14px;border-bottom:1px solid var(--border)}
+  .num{
+    font-size:14px;font-weight:800;color:var(--bg);background:var(--green);
+    width:32px;height:32px;min-width:32px;display:flex;align-items:center;justify-content:center;
+    border-radius:4px;box-shadow:0 0 18px var(--green-glow);
+  }
+  h2{font-size:22px;font-weight:700;color:#edf4ee;letter-spacing:-.3px}
+  .step-note{color:var(--text-dim);font-size:14px;margin:16px 0}
+  p strong{color:var(--text)}
+
+  /* ===== Code ===== */
+  .code{position:relative;background:#060a07;border:1px solid var(--border);border-radius:6px;margin:18px 0;overflow:hidden}
+  .code-top{display:flex;align-items:center;justify-content:space-between;background:#0b110c;border-bottom:1px solid var(--border);padding:8px 14px}
+  .code-top .dots{display:flex;gap:6px}
+  .code-top .dots i{width:10px;height:10px;border-radius:50%;display:block}
+  .dots i:nth-child(1){background:#e8646466}.dots i:nth-child(2){background:#e3a94866}.dots i:nth-child(3){background:#43e08a66}
+  .code-label{font-size:11px;color:var(--text-dim);letter-spacing:1px;flex:1;text-align:center;margin:0 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .copy{background:transparent;border:1px solid var(--border2);color:var(--green-dim);font-family:var(--mono);font-size:11px;padding:4px 12px;border-radius:3px;cursor:pointer;letter-spacing:1px;transition:all .15s;white-space:nowrap}
+  .copy:hover{background:var(--green);color:var(--bg);border-color:var(--green)}
+  .copy.done{background:var(--green-dim);color:var(--bg);border-color:var(--green-dim)}
+  pre{padding:16px 18px;overflow-x:auto;font-size:13px;line-height:1.65;color:#d6e6d8}
+  pre::-webkit-scrollbar{height:8px}
+  pre::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+  .cm{color:var(--text-dim)}
+  .kw{color:var(--cyan)}
+  .str{color:var(--amber)}
+  .var{color:var(--green)}
+  .fn{color:var(--violet)}
+  .file-tag{display:inline-block;font-size:11px;background:#0c120d;border:1px solid var(--border2);color:var(--cyan);padding:2px 9px;border-radius:3px;margin-bottom:-6px}
+
+  /* ===== Callouts ===== */
+  .note{border:1px solid var(--border);border-left:3px solid var(--cyan);background:#0a1413;border-radius:4px;padding:14px 18px;margin:18px 0;font-size:13.5px}
+  .note.warn{border-left-color:var(--amber);background:#131009}
+  .note.danger{border-left-color:var(--red);background:#130a0a}
+  .note.ok{border-left-color:var(--green);background:#0a130d}
+  .note b{color:var(--cyan)}.note.warn b{color:var(--amber)}.note.danger b{color:var(--red)}.note.ok b{color:var(--green)}
+
+  code.inline{background:#0c120d;border:1px solid var(--border2);padding:1px 7px;border-radius:3px;font-size:12.5px;color:var(--green)}
+
+  ul.clean{list-style:none;margin:14px 0}
+  ul.clean li{padding:6px 0 6px 26px;position:relative;font-size:14px}
+  ul.clean li::before{content:"▸";position:absolute;left:6px;color:var(--green-dim)}
+
+  table.t{width:100%;border-collapse:collapse;margin:18px 0;font-size:13px}
+  table.t th,table.t td{text-align:left;padding:10px 14px;border:1px solid var(--border)}
+  table.t th{background:#0b110c;color:var(--green-dim);font-size:11px;letter-spacing:1px;text-transform:uppercase}
+  table.t td:first-child{color:var(--green);white-space:nowrap}
+  .t-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:18px 0}
+  .t-scroll table.t{margin:0;min-width:480px}
+  .t-scroll::-webkit-scrollbar{height:8px}
+  .t-scroll::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+  @media(max-width:600px){
+    table.t{font-size:12px}
+    table.t th,table.t td{padding:8px 10px}
+    table.t td:first-child{white-space:normal}
+  }
+
+  footer{margin-top:64px;padding-top:30px;border-top:1px solid var(--border);text-align:center;color:var(--text-dim);font-size:12px}
+  .blink{animation:blink 1.1s step-end infinite}@keyframes blink{50%{opacity:0}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <h1>telemt self-mask<br><b>свой домен + nginx</b></h1>
+    <p class="sub">Один инстанс telemt на 443, маскировка под <strong>собственный</strong> домен с настоящим Let's Encrypt сертификатом за nginx-фронтом. Полная схема: серт, self-mask, автопродление через webroot, keepalive под мобильных клиентов, BBR+fq, recent-защита от зондирования с проверкой модуля ядра и ребут-тестом.</p>
+    <div class="badges">
+      <span class="badge"><b>OS</b> Ubuntu 22.04 / 24.04</span>
+      <span class="badge"><b>telemt</b> 3.4.18</span>
+      <span class="badge"><b>домен</b> + Let's Encrypt</span>
+      <span class="badge"><b>root</b> required</span>
+      <span class="badge"><b>~30</b> мин</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc">
+    <h4>Содержание</h4>
+    <ol>
+      <li><a href="#s1">Схема и зачем self-mask</a></li>
+      <li><a href="#s2">Подготовка системы</a></li>
+      <li><a href="#s3">keepalive + BBR/fq</a></li>
+      <li><a href="#s4">Бинарник + пользователь</a></li>
+      <li><a href="#s5">Сертификат Let's Encrypt</a></li>
+      <li><a href="#s6">nginx-фронт (3 блока)</a></li>
+      <li><a href="#s7">Конфиг telemt + systemd</a></li>
+      <li><a href="#s8">UFW + recent (модуль!)</a></li>
+      <li><a href="#s9">Запуск и проверка</a></li>
+      <li><a href="#s10">Автопродление серта</a></li>
+      <li><a href="#s11">Ребут-тест</a></li>
+      <li><a href="#s12">Ссылка + управление</a></li>
+    </ol>
+  </nav>
+
+  <!-- 1 -->
+  <section id="s1">
+    <div class="step-head"><span class="num">1</span><h2>Схема и зачем self-mask</h2></div>
+    <p class="step-note">Здесь другой подход, чем эмуляция чужого домена (apple/cloudflare). Мы берём <strong>собственный домен</strong>, получаем на него настоящий сертификат Let's Encrypt и поднимаем за telemt реальный nginx-сайт. На «левый» SNI и на прямой заход по IP telemt отдаёт этот наш сайт. Снаружи сервер выглядит как обычный маленький сайт на своём домене — потому что это и есть обычный сайт.</p>
+    <table class="t">
+      <tr><th>Слой</th><th>Что делает</th></tr>
+      <tr><td>telemt :443</td><td>принимает MTProto, на чужой SNI маскирует в nginx</td></tr>
+      <tr><td>nginx :8444</td><td>реальный сайт-заглушка со своим сертом (локальный)</td></tr>
+      <tr><td>nginx :80</td><td>редирект на https + отдаёт ACME для продления серта</td></tr>
+      <tr><td>self-mask</td><td>unknown_sni → свой сайт, валидный серт своего домена</td></tr>
+    </table>
+    <div class="note"><b>Маршрут трафика.</b> Клиент Telegram → :443 telemt (MTProto). Браузер / DPI-зонд по https → :443 telemt → unknown SNI → mask → локальный nginx :8444 → реальный сайт, отдаётся валидный серт <b>своего</b> домена. По http (:80) → редирект на https, плюс отдельная дырка под <code class="inline">/.well-known/acme-challenge/</code> для автопродления.</div>
+    <div class="note ok"><b>Плюс схемы:</b> сертификат настоящий и проходит любую проверку цепочки доверия, потому что домен реально твой. Не нужно «подтягивать» чужой серт — DPI видит честный валидный TLS к существующему сайту.</div>
+  </section>
+
+  <!-- 2 -->
+  <section id="s2">
+    <div class="step-head"><span class="num">2</span><h2>Подготовка системы</h2></div>
+    <p class="step-note">Обновляем пакеты, ставим зависимости. Заранее нужен <strong>домен, A-запись которого указывает на IP этого сервера</strong> — без этого Let's Encrypt не выдаст серт.</p>
+    <div class="code">
+      <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">bash</span><button class="copy">COPY</button></div>
+<pre>apt update
+apt install -y wget tar jq ufw python3 iptables nginx certbot curl dnsutils
+
+<span class="cm"># таймзона в UTC (логи будут единообразны)</span>
+timedatectl set-timezone UTC
+
+<span class="cm"># ПРОВЕРКА: домен указывает на этот сервер?</span>
+MYIP=$(curl -s ifconfig.me)
+DNSIP=$(dig +short ВАШ_ДОМЕН | tail -1)
+echo <span class="str">"сервер: $MYIP | домен резолвит в: $DNSIP"</span>
+<span class="cm"># эти два IP должны совпадать, иначе серт не получить</span></pre>
+    </div>
+    <div class="note warn"><b>Замени <code class="inline">ВАШ_ДОМЕН</code></b> на свой по всему гайду. До получения серта <code class="inline">$MYIP</code> и <code class="inline">$DNSIP</code> обязаны совпадать — Let's Encrypt проверяет владение доменом через реальный заход на :80.</div>
+  </section>
+
+  <!-- 3 -->
+  <section id="s3">
+    <div class="step-head"><span class="num">3</span><h2>keepalive + BBR/fq</h2></div>
+    <p class="step-note">Два сетевых тюнинга, которые сильно влияют на качество прокси:</p>
+    <ul class="clean">
+      <li><strong>keepalive 60/15/3</strong> — лечит «залипание» соединения на мобильных клиентах (особенно iOS в фоне): после 60с тишины сервер шлёт пробу, и мёртвые соединения отваливаются вовремя, а не висят.</li>
+      <li><strong>BBR + fq</strong> — современный контроль перегрузки + честная очередь пакетов. Заметно ровнее скорость на нагруженном канале.</li>
+    </ul>
+    <span class="file-tag">пишет /etc/sysctl.d/99-tg-keepalive.conf и 99-bbr.conf</span>
+    <div class="code">
+      <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">bash</span><button class="copy">COPY</button></div>
+<pre>cat > /etc/sysctl.d/99-tg-keepalive.conf &lt;&lt; <span class="str">'EOF'</span>
+net.ipv4.tcp_keepalive_time = 60
+net.ipv4.tcp_keepalive_intvl = 15
+net.ipv4.tcp_keepalive_probes = 3
+EOF
+
+cat > /etc/sysctl.d/99-bbr.conf &lt;&lt; <span class="str">'EOF'</span>
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+EOF
+
+sysctl --system >/dev/null
+IFACE=$(ip route | awk <span class="str">'/default/{print $5; exit}'</span>)
+tc qdisc replace dev $IFACE root fq
+
+<span class="cm"># проверка</span>
+echo <span class="str">"keepalive: $(sysctl -n net.ipv4.tcp_keepalive_time)/$(sysctl -n net.ipv4.tcp_keepalive_intvl)/$(sysctl -n net.ipv4.tcp_keepalive_probes)"</span>
+echo <span class="str">"bbr: $(sysctl -n net.ipv4.tcp_congestion_control) | qdisc: $(tc qdisc show dev $IFACE | head -1 | awk '{print $2}')"</span></pre>
+    </div>
+    <div class="note"><b>Должно показать</b> <code class="inline">keepalive: 60/15/3</code> и <code class="inline">bbr | fq</code>. На ядре 6.8+ <code class="inline">default_qdisc=fq</code> подхватывается сам после ребута; на старых ядрах fq может слетать — это одна из причин брать свежий образ ОС.</div>
+    <div class="note warn"><b>Не добавляй секцию <code class="inline">[timeouts]</code> в конфиг telemt</b> при таком keepalive — она конфликтует с системным и даёт обратный эффект. keepalive держим только на уровне sysctl.</div>
+  </section>
+
+  <!-- 4 -->
+  <section id="s4">
+    <div class="step-head"><span class="num">4</span><h2>Бинарник + пользователь</h2></div>
+    <p class="step-note">Отдельный системный пользователь без shell, рабочие папки, бинарник telemt из последнего релиза.</p>
+    <div class="code">
+      <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">bash</span><button class="copy">COPY</button></div>
+<pre>id telemt &amp;>/dev/null || useradd -r -s /usr/sbin/nologin -d /opt/telemt telemt
+mkdir -p /opt/telemt /etc/telemt
+chown -R telemt:telemt /opt/telemt
+
+cd /tmp
+wget -qO- <span class="str">"https://github.com/telemt/telemt/releases/latest/download/telemt-x86_64-linux-gnu.tar.gz"</span> | tar -xz
+mv /tmp/telemt /bin/telemt
+chmod +x /bin/telemt
+/bin/telemt --version</pre>
+    </div>
+    <div class="note ok"><b>Должно вывести</b> <code class="inline">telemt 3.4.18</code> (или новее). <code class="inline">chown</code> на <code class="inline">/opt/telemt</code> обязателен — иначе демон споткнётся на правах при старте (Permission denied в логах).</div>
+  </section>
+
+  <!-- 5 -->
+  <section id="s5">
+    <div class="step-head"><span class="num">5</span><h2>Сертификат Let's Encrypt</h2></div>
+    <p class="step-note">Получаем серт на свой домен. Делаем это <strong>через webroot</strong>, а не standalone — потому что :80 займёт nginx, и standalone-режим в будущем сломает автопродление (не сможет забиндить порт). Сразу настраиваем правильно.</p>
+    <p class="step-note">Сначала временно поднимем nginx на :80, чтобы certbot прошёл валидацию:</p>
+    <div class="code">
+      <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">bash — получить серт</span><button class="copy">COPY</button></div>
+<pre>mkdir -p /var/www/html/.well-known/acme-challenge
+
+<span class="cm"># минимальный временный конфиг nginx на :80 для валидации</span>
+cat > /etc/nginx/sites-available/acme-temp &lt;&lt; <span class="str">'EOF'</span>
+server {
+    listen 80;
+    server_name ВАШ_ДОМЕН;
+    root /var/www/html;
+    location /.well-known/acme-challenge/ { allow all; }
+}
+EOF
+ln -sf /etc/nginx/sites-available/acme-temp /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/default
+nginx -t &amp;&amp; systemctl restart nginx
+
+<span class="cm"># выдача серта через webroot</span>
+certbot certonly --webroot -w /var/www/html \
+  -d ВАШ_ДОМЕН --non-interactive --agree-tos \
+  -m admin@ВАШ_ДОМЕН --cert-name ВАШ_ДОМЕН
+
+<span class="cm"># проверка — серт на месте?</span>
+openssl x509 -enddate -noout -in /etc/letsencrypt/live/ВАШ_ДОМЕН/cert.pem</pre>
+    </div>
+    <div class="note danger"><b>Почему именно webroot.</b> Если получить серт в режиме <code class="inline">standalone</code> (когда certbot сам поднимает свой сервер на :80), то потом nginx займёт :80, и <code class="inline">certbot renew</code> будет падать с «Could not bind TCP port 80». Серт молча протухнет через 90 дней. webroot + nginx-дырка под ACME (шаг 6) — единственный надёжный вариант, когда на :80 уже что-то слушает.</div>
+    <div class="note ok"><b>Вывод <code class="inline">notAfter=...</code></b> примерно через 90 дней — серт получен. Теперь временный конфиг заменим на боевой.</div>
+  </section>
+
+  <!-- 6 -->
+  <section id="s6">
+    <div class="step-head"><span class="num">6</span><h2>nginx-фронт: 3 блока</h2></div>
+    <p class="step-note">Боевой конфиг nginx из трёх <code class="inline">server</code>-блоков. Каждый со своей задачей:</p>
+    <div class="t-scroll">
+    <table class="t">
+      <tr><th>Блок</th><th>Слушает</th><th>Делает</th></tr>
+      <tr><td>default</td><td>:80 + :8444</td><td>чужой Host / прямой IP → <code class="inline">return 444</code> (обрыв)</td></tr>
+      <tr><td>:80 домен</td><td>:80</td><td>ACME-дырка + редирект на https</td></tr>
+      <tr><td>:8444 ssl</td><td>:8444 (локально)</td><td>сам сайт-заглушка + фильтр-ловушка</td></tr>
+    </table>
+    </div>
+    <span class="file-tag">пишет /etc/nginx/sites-available/site</span>
+    <div class="code">
+      <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">python3 — пишет nginx-конфиг</span><button class="copy">COPY</button></div>
+<pre>python3 &lt;&lt; <span class="str">'PYEOF'</span>
+DOMAIN = <span class="str">"ВАШ_ДОМЕН"</span>   <span class="cm"># ← ЗАМЕНИ</span>
+cfg = f<span class="str">"""server {{
+    listen 80 default_server;
+    listen 127.0.0.1:8444 ssl default_server;
+    server_name _;
+    ssl_certificate /etc/letsencrypt/live/{DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{DOMAIN}/privkey.pem;
+    return 444;
+}}
+server {{
+    listen 80;
+    server_name {DOMAIN};
+    location /.well-known/acme-challenge/ {{
+        root /var/www/html;
+        allow all;
+    }}
+    location / {{
+        return 301 https://{DOMAIN}$request_uri;
+    }}
+}}
+server {{
+    listen 127.0.0.1:8444 ssl;
+    server_name {DOMAIN};
+    server_tokens off;
+    ssl_certificate /etc/letsencrypt/live/{DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{DOMAIN}/privkey.pem;
+    root /var/www/html;
+    index index.html;
+    location ~* "(wget|curl|chmod|/tmp/|eval\\(|base64)" {{
+        return 403;
+    }}
+    location / {{
+        try_files $uri $uri/ =404;
+    }}
+}}
+"""</span>
+open(<span class="str">"/etc/nginx/sites-available/site"</span>, <span class="str">"w"</span>).write(cfg)
+print(<span class="str">"nginx-конфиг записан"</span>)
+PYEOF
+
+<span class="cm"># подключаем боевой, убираем временный</span>
+ln -sf /etc/nginx/sites-available/site /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/acme-temp
+nginx -t &amp;&amp; systemctl restart nginx</pre>
+    </div>
+    <p class="step-note">Кладём простую заглушку-сайт (любой статический HTML). Главное — чтобы при заходе отдавалось что-то осмысленное:</p>
+    <div class="code">
+      <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">bash — заглушка</span><button class="copy">COPY</button></div>
+<pre>cat > /var/www/html/index.html &lt;&lt; <span class="str">'EOF'</span>
+&lt;!doctype html&gt;&lt;html lang="ru"&gt;&lt;head&gt;&lt;meta charset="utf-8"&gt;
+&lt;title&gt;Главная&lt;/title&gt;&lt;/head&gt;
+&lt;body&gt;&lt;h1&gt;Сайт работает&lt;/h1&gt;&lt;p&gt;Скоро здесь будет контент.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;
+EOF</pre>
+    </div>
+    <div class="note warn"><b>Фильтр-ловушка</b> в :8444 (<code class="inline">location ~* "(wget|curl|...)"</code>) срабатывает на <b>путь URI</b>, а не на User-Agent — режет автоматические сканеры, которые дёргают пути вида <code class="inline">/tmp/x</code> или <code class="inline">?cmd=wget...</code>. Отдаёт им 403 вместо контента.</div>
+  </section>
+
+  <!-- 7 -->
+  <section id="s7">
+    <div class="step-head"><span class="num">7</span><h2>Конфиг telemt + systemd</h2></div>
+    <p class="step-note">Один инстанс на :443. Ключевое отличие от эмуляции чужого домена: <code class="inline">tls_emulation = false</code> и <code class="inline">unknown_sni_action = "mask"</code> — на неизвестный SNI telemt перекидывает на наш локальный nginx (<code class="inline">mask_port = 8444</code>), а не подделывает чужой серт.</p>
+    <div class="note warn"><b>Почему python, а не heredoc:</b> в мобильных SSH-клиентах <code class="inline">cat &lt;&lt; EOF</code> с длинными строками склеивается и обрывается. python пишет надёжно. <strong>Подставь свой домен и секрет</strong> (32 hex — сгенерируй <code class="inline">openssl rand -hex 16</code>).</p>
+    <span class="file-tag">пишет /etc/telemt/telemt1.toml</span>
+    <div class="code">
+      <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">python3 — конфиг telemt</span><button class="copy">COPY</button></div>
+<pre>python3 &lt;&lt; <span class="str">'PYEOF'</span>
+DOMAIN = <span class="str">"ВАШ_ДОМЕН"</span>                          <span class="cm"># ←</span>
+SECRET = <span class="str">"ВАШ_СЕКРЕТ_32_HEX"</span>                   <span class="cm"># ← openssl rand -hex 16</span>
+cfg = f<span class="str">"""[general]
+prefer_ipv6 = false
+fast_mode = true
+use_middle_proxy = false
+
+[general.modes]
+classic = false
+secure = false
+tls = true
+
+[server]
+port = 443
+listen_addr_ipv4 = "0.0.0.0"
+client_mss = "tspu"
+
+[server.api]
+enabled = true
+listen = "127.0.0.1:9091"
+whitelist = ["127.0.0.1/32"]
+
+[censorship]
+tls_domain = "{DOMAIN}"
+mask = true
+mask_host = "127.0.0.1"
+mask_port = 8444
+tls_emulation = false
+unknown_sni_action = "mask"
+fake_cert_len = 2048
+
+[access]
+replay_check_len = 65536
+ignore_time_skew = false
+
+[access.users]
+user1 = "{SECRET}"
+"""</span>
+open(<span class="str">"/etc/telemt/telemt1.toml"</span>, <span class="str">"w"</span>).write(cfg)
+print(<span class="str">"конфиг записан, домен:"</span>, DOMAIN)
+PYEOF
+chown -R telemt:telemt /etc/telemt</pre>
+    </div>
+    <table class="t">
+      <tr><th>Параметр</th><th>Что делает</th></tr>
+      <tr><td>use_middle_proxy = false</td><td>прямой доступ к DC Telegram (быстрее; нужен открытый DC у хостера)</td></tr>
+      <tr><td>client_mss = "tspu"</td><td>MSS=92, маскирует размер пакетов под браузер (анти-DPI ТСПУ)</td></tr>
+      <tr><td>tls_emulation = false</td><td>НЕ подделываем чужой серт — у нас свой настоящий</td></tr>
+      <tr><td>unknown_sni_action = "mask"</td><td>левый SNI → локальный nginx :8444 (наш сайт)</td></tr>
+      <tr><td>mask_port = 8444</td><td>куда внутри слать замаскированный трафик</td></tr>
+    </table>
+    <p class="step-note">systemd-юнит с автозапуском и капабилити для bind на 443:</p>
+    <span class="file-tag">пишет /etc/systemd/system/telemt1.service</span>
+    <div class="code">
+      <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">bash</span><button class="copy">COPY</button></div>
+<pre>cat > /etc/systemd/system/telemt1.service &lt;&lt; <span class="str">'EOF'</span>
+[Unit]
+Description=Telemt Proxy 1 (port 443 self-mask)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=telemt
+Group=telemt
+WorkingDirectory=/opt/telemt
+ExecStart=/bin/telemt /etc/telemt/telemt1.toml
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable telemt1</pre>
+    </div>
+  </section>
+
+  <!-- 8 -->
+  <section id="s8">
+    <div class="step-head"><span class="num">8</span><h2>UFW + recent (с проверкой модуля!)</h2></div>
+    <p class="step-note">Базовые правила. <strong>SSH разреши до <code class="inline">ufw enable</code></strong> — лучше с конкретного IP, чтобы не отрезать себе доступ.</p>
+    <div class="note danger"><b>ВНИМАНИЕ.</b> Поменяй <code class="inline">ВАШ_IP</code> на свой реальный (где ты сейчас). Проверь что SSH-правило есть, прежде чем включать UFW.</div>
+    <div class="code">
+      <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">bash — порты</span><button class="copy">COPY</button></div>
+<pre><span class="cm"># SSH с твоего IP — критично, первым делом</span>
+ufw allow from ВАШ_IP to any port 22 proto tcp comment <span class="str">'SSH'</span>
+
+ufw allow 80/tcp comment <span class="str">'nginx acme+redirect'</span>
+ufw allow 443/tcp comment <span class="str">'telemt'</span>
+ufw default deny incoming
+ufw default allow outgoing
+ufw --force enable
+ufw status verbose</pre>
+    </div>
+
+    <p class="step-note">Теперь <strong>recent</strong> — rate-limit 1 новый SYN/сек с одного IP на :443. Отбивает активное зондирование. Но сначала — <strong>модуль ядра</strong>, без него правило мёртвое.</p>
+    <div class="note danger"><b>Главная ловушка recent.</b> Правило в <code class="inline">before.rules</code> — это полдела. Нужен загруженный модуль ядра <code class="inline">xt_recent</code>. Если его нет на момент <code class="inline">ufw reload</code> — правило <b>молча не применится</b> (в iptables его не будет, но и ошибки не будет). Сначала проверяем и закрепляем модуль, потом вставляем правило.</div>
+    <div class="code">
+      <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">bash — модуль СНАЧАЛА</span><button class="copy">COPY</button></div>
+<pre><span class="cm"># модуль есть в ядре?</span>
+modinfo xt_recent | grep filename
+
+<span class="cm"># загружаем + закрепляем на автозагрузку (для ребута!)</span>
+modprobe xt_recent
+echo xt_recent > /etc/modules-load.d/xt_recent.conf
+
+<span class="cm"># ПРОВЕРКА — должна быть строка xt_recent:</span>
+lsmod | grep xt_recent</pre>
+    </div>
+    <div class="note warn"><b>Если <code class="inline">modinfo</code> ничего не вывел</b> — модуля нет в этой сборке ядра, recent поставить не выйдет. Это маркер неподходящего хостинга/образа: бери стандартный Ubuntu-образ, там <code class="inline">xt_recent</code> есть. <code class="inline">/etc/modules-load.d/xt_recent.conf</code> — обязателен, без него после ребута модуль не загрузится и recent отвалится.</div>
+
+    <p class="step-note">Вставляем правило в <code class="inline">before.rules</code> (после loopback-accept) и применяем:</p>
+    <span class="file-tag">правит /etc/ufw/before.rules</span>
+    <div class="code">
+      <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">python3 — recent на 443</span><button class="copy">COPY</button></div>
+<pre>cp /etc/ufw/before.rules /etc/ufw/before.rules.bak.$(date +%s)
+
+python3 &lt;&lt; <span class="str">'PYEOF'</span>
+path = <span class="str">"/etc/ufw/before.rules"</span>
+s = open(path).read()
+if <span class="str">"mtp443"</span> in s:
+    print(<span class="str">"уже есть, пропуск"</span>); raise SystemExit
+rule = <span class="str">"""# === MTProto rate-limit 443 ===
+-A ufw-before-input -p tcp --dport 443 --syn -m recent --name mtp443 --rcheck --seconds 1 -j DROP
+-A ufw-before-input -p tcp --dport 443 --syn -m recent --name mtp443 --set -j ACCEPT
+"""</span>
+marker = <span class="str">"-A ufw-before-input -i lo -j ACCEPT"</span>
+if marker in s:
+    s = s.replace(marker, marker + <span class="str">"\n"</span> + rule, 1)
+    open(path, <span class="str">"w"</span>).write(s)
+    print(<span class="str">"recent вставлен"</span>)
+else:
+    print(<span class="str">"ОШИБКА: маркер не найден"</span>)
+PYEOF
+
+ufw reload
+
+<span class="cm"># ПРОВЕРКА — правило реально в живом фаерволе?</span>
+iptables -L ufw-before-input -v -n | grep recent
+ls /proc/net/xt_recent/        <span class="cm"># должен появиться mtp443</span></pre>
+    </div>
+    <div class="note ok"><b>Признак успеха:</b> <code class="inline">iptables ... grep recent</code> выдаёт две строки (CHECK + SET) с <code class="inline">mtp443</code>, и в <code class="inline">/proc/net/xt_recent/</code> появился файл <code class="inline">mtp443</code>. Если обе проверки прошли — recent реально работает, а не просто прописан в файле.</div>
+  </section>
+
+  <!-- 9 -->
+  <section id="s9">
+    <div class="step-head"><span class="num">9</span><h2>Запуск и проверка</h2></div>
+    <p class="step-note">Стартуем telemt, проверяем весь маршрут.</p>
+    <div class="code">
+      <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">bash</span><button class="copy">COPY</button></div>
+<pre>systemctl start telemt1
+sleep 6
+systemctl is-active telemt1
+
+<span class="cm"># telemt видит DC и слушает 443?</span>
+journalctl -u telemt1 --no-pager -n 20 | grep -iE <span class="str">"Initialized|Listening"</span>
+ss -tlnp | grep <span class="str">':443 '</span> | grep -o telemt</pre>
+    </div>
+    <p class="step-note">Проверяем браузерный путь и nginx-фронт (подставь свой домен и IP):</p>
+    <div class="code">
+      <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">bash — диагностика маршрута</span><button class="copy">COPY</button></div>
+<pre><span class="cm"># браузерный путь: 443 telemt -> mask -> nginx сайт (ждём 200)</span>
+curl -sk https://ВАШ_ДОМЕН/ --resolve ВАШ_ДОМЕН:443:127.0.0.1 \
+  -A <span class="str">"Mozilla/5.0"</span> -o /dev/null -w <span class="str">"сайт: HTTP %{http_code}\n"</span> --max-time 8
+
+<span class="cm"># http -> https редирект (ждём 301)</span>
+curl -sI http://127.0.0.1:80/ -H <span class="str">"Host: ВАШ_ДОМЕН"</span> | grep -iE <span class="str">"HTTP|location"</span>
+
+<span class="cm"># ACME-дырка отдаётся по :80?</span>
+echo test > /var/www/html/.well-known/acme-challenge/t
+curl -s http://127.0.0.1/.well-known/acme-challenge/t -H <span class="str">"Host: ВАШ_ДОМЕН"</span>; rm -f /var/www/html/.well-known/acme-challenge/t
+
+<span class="cm"># фильтр-ловушка на :8444 (ждём 403)</span>
+curl -sk <span class="str">"https://127.0.0.1:8444/tmp/x"</span> -H <span class="str">"Host: ВАШ_ДОМЕН"</span> -o /dev/null -w <span class="str">"  /tmp/ -> HTTP %{http_code} (ждём 403)\n"</span>
+
+<span class="cm"># чужой Host -> обрыв 444 (curl покажет 000)</span>
+curl -sI http://127.0.0.1:80/ -H <span class="str">"Host: other.com"</span> -o /dev/null -w <span class="str">"  чужой Host -> %{http_code} (000=обрыв, ок)\n"</span> --max-time 5</pre>
+    </div>
+    <div class="note ok"><b>Признаки успеха:</b> telemt <code class="inline">active</code>, в логах <code class="inline">DC/ME Initialized</code> + <code class="inline">Listening on 0.0.0.0:443</code>, порт держит <code class="inline">telemt</code>, сайт отдаёт <code class="inline">200</code>, http даёт <code class="inline">301</code>, ACME-файл читается, <code class="inline">/tmp/</code> ловится в <code class="inline">403</code>, чужой Host обрывается.</div>
+  </section>
+
+  <!-- 10 -->
+  <section id="s10">
+    <div class="step-head"><span class="num">10</span><h2>Автопродление серта</h2></div>
+    <p class="step-note">Серт Let's Encrypt живёт 90 дней. Так как мы получили его через <strong>webroot</strong>, а в nginx есть ACME-дырка (шаг 6), автопродление работает без остановки nginx. Проверяем dry-run:</p>
+    <div class="code">
+      <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">bash</span><button class="copy">COPY</button></div>
+<pre><span class="cm"># тестовый прогон продления (ничего не меняет)</span>
+certbot renew --dry-run
+
+<span class="cm"># таймер certbot активен? (продлит автоматически)</span>
+systemctl list-timers | grep certbot</pre>
+    </div>
+    <div class="note danger"><b>Если dry-run падает</b> с «Could not bind TCP port 80» — значит серт когда-то получали в режиме <code class="inline">standalone</code>, и метод не переключился на webroot. Лечение — принудительно перевыпустить через webroot один раз:
+    <div class="code" style="margin-top:10px">
+      <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">bash — починка standalone -> webroot</span><button class="copy">COPY</button></div>
+<pre>certbot certonly --webroot -w /var/www/html \
+  -d ВАШ_ДОМЕН --cert-name ВАШ_ДОМЕН --force-renewal
+certbot renew --dry-run   <span class="cm"># теперь должно пройти</span></pre>
+    </div>
+    <code class="inline">--force-renewal</code> здесь обязателен: без него certbot скажет «not yet due» и метод не перепишется.</div>
+    <div class="note ok"><b>Должно вывести</b> <code class="inline">Congratulations, all simulated renewals succeeded</code> и активный таймер <code class="inline">certbot.timer</code>. Тогда серт будет продлеваться сам.</div>
+  </section>
+
+  <!-- 11 -->
+  <section id="s11">
+    <div class="step-head"><span class="num">11</span><h2>Ребут-тест</h2></div>
+    <p class="step-note">Финальная и <strong>обязательная</strong> проверка: всё должно подниматься само после перезагрузки. Особенно recent — его модуль и правило это частая точка отказа. Делай это <strong>до того как пустишь на сервер боевой трафик</strong>.</p>
+    <div class="code">
+      <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">bash — перед ребутом</span><button class="copy">COPY</button></div>
+<pre><span class="cm"># всё в автозапуске?</span>
+systemctl is-enabled telemt1 nginx ufw
+grep -c mtp443 /etc/ufw/before.rules        <span class="cm"># 2</span>
+cat /etc/modules-load.d/xt_recent.conf      <span class="cm"># xt_recent</span>
+
+reboot</pre>
+    </div>
+    <p class="step-note">После перезагрузки заходим и проверяем, что recent <strong>пережил ребут</strong> и всё поднялось:</p>
+    <div class="code">
+      <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">bash — после ребута</span><button class="copy">COPY</button></div>
+<pre>echo <span class="str">"telemt: $(systemctl is-active telemt1) | nginx: $(systemctl is-active nginx) | ufw: $(systemctl is-active ufw)"</span>
+
+<span class="cm"># recent пережил ребут? (главное)</span>
+lsmod | grep xt_recent &amp;&amp; echo <span class="str">"модуль загрузился сам"</span>
+iptables -L ufw-before-input -v -n | grep -c recent      <span class="cm"># 2</span>
+ls /proc/net/xt_recent/                                   <span class="cm"># mtp443</span>
+
+<span class="cm"># fq + keepalive после ребута?</span>
+IFACE=$(ip route | awk <span class="str">'/default/{print $5; exit}'</span>)
+echo <span class="str">"qdisc: $(tc qdisc show dev $IFACE | head -1 | awk '{print $2}') | keepalive: $(sysctl -n net.ipv4.tcp_keepalive_time)"</span>
+
+<span class="cm"># сайт жив?</span>
+curl -sk https://ВАШ_ДОМЕН/ --resolve ВАШ_ДОМЕН:443:127.0.0.1 -o /dev/null -w <span class="str">"сайт: HTTP %{http_code}\n"</span> --max-time 8</pre>
+    </div>
+    <div class="note ok"><b>Всё зелёное</b> = сервер отказоустойчив: telemt/nginx/ufw active, модуль xt_recent загрузился сам (сработал modules-load.d), recent-правил 2, mtp443 на месте, qdisc fq, keepalive 60. Можно пускать трафик.</div>
+  </section>
+
+  <!-- 12 -->
+  <section id="s12">
+    <div class="step-head"><span class="num">12</span><h2>Ссылка + управление</h2></div>
+    <p class="step-note">Ссылку telemt собирает сам — берём из API. Получится вид <code class="inline">https://t.me/proxy?server=ВАШ_ДОМЕН&amp;port=443&amp;secret=ee...</code>.</p>
+    <div class="code">
+      <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">bash — ссылка</span><button class="copy">COPY</button></div>
+<pre>curl -s http://127.0.0.1:9091/v1/users \
+  | python3 -c <span class="str">"import sys,json; print(json.load(sys.stdin)['data'][0]['links']['tls'][0])"</span></pre>
+    </div>
+    <div class="note"><b>Ссылка открывается ВНУТРИ Telegram</b> (окно «Подключить прокси»), а не в браузере. Если клиент открыл её как веб-адрес и увидел сайт — он сделал не то: ссылку надо тапнуть в Telegram или вставить в поиск Telegram.</div>
+    <p class="step-note">Команды на каждый день:</p>
+    <div class="code">
+      <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">bash — статистика / управление</span><button class="copy">COPY</button></div>
+<pre><span class="cm"># текущие подключения</span>
+curl -s http://127.0.0.1:9091/v1/users | jq <span class="str">'.data[] | {user:.username, conns:.current_connections, ips:.active_unique_ips}'</span>
+
+systemctl restart telemt1            <span class="cm"># рестарт после правки конфига</span>
+journalctl -u telemt1 -f             <span class="cm"># логи в реальном времени</span></pre>
+    </div>
+    <div class="code">
+      <div class="code-top"><div class="dots"><i></i><i></i><i></i></div><span class="code-label">bash — обновление telemt</span><button class="copy">COPY</button></div>
+<pre>cd /tmp
+wget -qO- <span class="str">"https://github.com/telemt/telemt/releases/latest/download/telemt-x86_64-linux-gnu.tar.gz"</span> | tar -xz
+systemctl stop telemt1
+mv /tmp/telemt /bin/telemt &amp;&amp; chmod +x /bin/telemt
+systemctl start telemt1
+/bin/telemt --version</pre>
+    </div>
+    <div class="note"><b>После правки конфига</b> — <code class="inline">systemctl restart telemt1</code>. Ссылка не меняется, пока не трогаешь домен/порт/секрет. Активные клиенты переподключатся не мгновенно — иногда нужно переоткрыть Telegram.</div>
+  </section>
+
+  <footer>
+    <p>telemt self-mask guide · Ubuntu · свой домен + nginx + Let's Encrypt + recent</p>
+    <p style="margin-top:8px">домен укажи на сервер до серта · серт через webroot · SSH разреши до ufw enable · проверь модуль xt_recent · сделай ребут-тест<span class="blink">_</span></p>
+  </footer>
+
+</div>
+
+<script>
+  document.querySelectorAll('.copy').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const pre=btn.closest('.code').querySelector('pre');
+      navigator.clipboard.writeText(pre.innerText).then(()=>{
+        const old=btn.textContent;
+        btn.textContent='✓ OK';btn.classList.add('done');
+        setTimeout(()=>{btn.textContent=old;btn.classList.remove('done')},1400);
+      });
+    });
+  });
+</script>
+</body>
+</html>
